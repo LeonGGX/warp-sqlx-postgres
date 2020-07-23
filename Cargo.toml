@@ -1,0 +1,19 @@
+[package]
+name = "warp-sqlx-postgres"
+version = "0.1.0"
+authors = ["LéonGGX <lgengoux@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+warp = "0.2.3"
+tokio = { version = "0.2", features = ["macros"] }
+sqlx = {version = "0.3.5", features = ["postgres", "macros"]}
+serde = {version = "1.0.111", features = ["derive"]}
+serde_json = "1.0.53"
+anyhow = "1.0.31"
+futures = "0.3.5"
+thiserror = "1.0.20"
+env_logger = "0.7.1"
+log = "0.4.11"
