@@ -7,15 +7,17 @@ use serde::Serialize;
 
 use sqlx::PgPool;
 
-use warp::{reject, Reply, Rejection};
 use warp::http::StatusCode;
+use warp::{reject, Rejection, Reply};
 
-use crate::models::{Person, InsertablePerson};
 use crate::db;
 use crate::errors::CustError;
+use crate::models::{InsertablePerson, Person};
 
-
-pub(crate) async fn find_person_by_id_hdler(id: i32, pool: PgPool, ) -> Result<impl Reply, Rejection> {
+pub(crate) async fn find_person_by_id_hdler(
+    id: i32,
+    pool: PgPool,
+) -> Result<impl Reply, Rejection> {
     let res = db::find_person_by_id(id, &pool).await;
     match res {
         Ok(person) => Ok(warp::reply::json(&person)),
@@ -26,23 +28,29 @@ pub(crate) async fn find_person_by_id_hdler(id: i32, pool: PgPool, ) -> Result<i
 pub async fn list_persons_hdler(pool: PgPool) -> Result<impl Reply, Rejection> {
     let res = db::list_persons(&pool).await;
     match res {
-        Ok(list_persons) => Ok(warp::reply::json(&list_persons)),
-        Err(_) => Err(reject::not_found())
+        Ok(list_persons) => {
+            tracing::info!("Liste des personnes trouvée");
+            Ok(warp::reply::json(&list_persons))
+        },
+        Err(_) => {
+            tracing::info!("Erreur: liste personne pas trouvée !");
+            Err(reject::not_found())
+        },
     }
 }
 
-pub async fn add_person_hdler(insert_pers: InsertablePerson, pool: PgPool) -> Result<impl Reply, Rejection> {
-
-    //let insert_pers = InsertablePerson{first_name: pers.first_name, last_name: pers.last_name};
-
+pub async fn add_person_hdler(
+    insert_pers: InsertablePerson,
+    pool: PgPool,
+) -> Result<impl Reply, Rejection> {
     let res = db::add_person(&pool, insert_pers).await;
     match res {
         Ok(pers) => {
-            log::debug!("create person : {:?}", &pers);
+            tracing::debug!("create person : {:?}", &pers);
             Ok(StatusCode::CREATED)
-        },
+        }
         Err(_) => {
-            log::debug!("error creating person");
+            tracing::info!("error creating person");
             Ok(StatusCode::BAD_REQUEST)
         }
     }
@@ -52,26 +60,29 @@ pub async fn delete_person_hdler(pers_id: i32, pool: PgPool) -> Result<impl Repl
     let res = db::delete_person(pers_id, &pool).await;
     match res {
         Ok(id) => {
-            log::debug!(" id person deleted : {:?}", &id);
+            tracing::debug!("id person deleted : {:?}", &id);
             Ok(StatusCode::ACCEPTED)
-        },
+        }
         Err(_) => {
-            log::debug!("error creating person");
+            tracing::info!("error deleting person");
             Ok(StatusCode::BAD_REQUEST)
         }
     }
-
 }
 
-pub async fn update_person_hdler(pers_id: i32, modifyed_pers: InsertablePerson, pool:PgPool)-> Result<impl Reply, Rejection> {
+pub async fn update_person_hdler(
+    pers_id: i32,
+    modifyed_pers: InsertablePerson,
+    pool: PgPool,
+) -> Result<impl Reply, Rejection> {
     let res = db::update_person(pers_id, modifyed_pers, &pool).await;
     match res {
         Ok(pers) => {
-            debug!(" id person updated : {:?}", &pers);
+            tracing::debug!(" Person updated : {:?}", &pers);
             Ok(StatusCode::ACCEPTED)
-        },
+        }
         Err(_) => {
-            debug!("error updating person");
+            tracing::info!("error updating person");
             Ok(StatusCode::BAD_REQUEST)
         }
     }
@@ -93,8 +104,7 @@ pub async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> 
     if err.is_not_found() {
         code = StatusCode::NOT_FOUND;
         message = "NOT_FOUND";
-    }
-    else if let Some(e) = err.find::<warp::filters::body::BodyDeserializeError>() {
+    } else if let Some(e) = err.find::<warp::filters::body::BodyDeserializeError>() {
         // This error happens if the body could not be deserialized correctly
         // We can use the cause to analyze the error and customize the error message
         message = match e.source() {
@@ -113,11 +123,11 @@ pub async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> 
         message = "METHOD_NOT_ALLOWED";
     } else if let Some(e) = err.find::<CustError>() {
         match e {
-            CustError::DBQueryError(_)=> {
+            CustError::DBQueryError(_) => {
                 code = StatusCode::BAD_REQUEST;
                 message = "Could not Execute request DBQueryError";
             }
-            CustError::DBPoolError(_)=> {
+            CustError::DBPoolError(_) => {
                 code = StatusCode::BAD_REQUEST;
                 message = "Could not Execute request DBPoolError";
             }
