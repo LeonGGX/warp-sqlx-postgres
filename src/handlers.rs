@@ -10,27 +10,56 @@ use sqlx::PgPool;
 use warp::http::StatusCode;
 use warp::{reject, Rejection, Reply};
 
+use tera::{Tera, Context};
+
 use crate::db;
 use crate::errors::CustError;
-use crate::models::{InsertablePerson, Person};
+use crate::models::{InsertablePerson,};
 
-pub(crate) async fn find_person_by_id_hdler(
-    id: i32,
-    pool: PgPool,
-) -> Result<impl Reply, Rejection> {
+use crate::template_setup::tera::render;
+use warp::reject::Reject;
+use std::fmt::Display;
+
+use thiserror::Error;
+
+pub async fn home_page_hdler() -> Result<Box<dyn Reply>, Rejection> {
+    tracing::info!("chargement page home");
+    let ctx = Context::new();
+    let body = render("index.html", &ctx).unwrap();
+    Ok(Box::new(warp::reply::html(body)))
+}
+
+
+pub(crate) async fn find_person_by_id_hdler(id: i32, pool: PgPool,) -> Result<Box<dyn Reply>, Rejection> {
     let res = db::find_person_by_id(id, &pool).await;
     match res {
-        Ok(person) => Ok(warp::reply::json(&person)),
-        Err(_) => Err(reject::not_found()),
+        Ok(person) => {
+            tracing::info!("Personne trouvée : {}, {}", &person.last_name, &person.first_name);
+
+            let mut ctx = Context::new();
+            ctx.insert("person", &person);
+
+            let body = render("one_person.html", &ctx).unwrap();
+            Ok(Box::new(warp::reply::html(body)))
+        },
+        Err(_) => {
+            tracing::info!("Erreur: personne pas trouvée !");
+            Err(reject::not_found())
+        },
     }
 }
 
-pub async fn list_persons_hdler(pool: PgPool) -> Result<impl Reply, Rejection> {
+pub async fn list_persons_hdler(pool: PgPool,) -> Result<Box<dyn Reply>, Rejection> {
     let res = db::list_persons(&pool).await;
     match res {
         Ok(list_persons) => {
             tracing::info!("Liste des personnes trouvée");
-            Ok(warp::reply::json(&list_persons))
+
+            let mut ctx = Context::new();
+            ctx.insert("persons", &list_persons);
+            let body = render("persons.html", &ctx).unwrap();
+
+            Ok(Box::new(warp::reply::html(body)))
         },
         Err(_) => {
             tracing::info!("Erreur: liste personne pas trouvée !");
@@ -39,19 +68,24 @@ pub async fn list_persons_hdler(pool: PgPool) -> Result<impl Reply, Rejection> {
     }
 }
 
-pub async fn add_person_hdler(
-    insert_pers: InsertablePerson,
-    pool: PgPool,
-) -> Result<impl Reply, Rejection> {
+pub async fn page_add_hdler() -> Result<Box<dyn Reply>, Rejection> {
+    let ctx = Context::new();
+    let body = render("add_person.html", &ctx).unwrap();
+    Ok(Box::new(warp::reply::html(body)))
+}
+
+pub async fn add_person_hdler(insert_pers: InsertablePerson, pool: PgPool,) -> Result<impl Reply, Rejection> {
+
     let res = db::add_person(&pool, insert_pers).await;
+
     match res {
         Ok(pers) => {
-            tracing::debug!("create person : {:?}", &pers);
-            Ok(StatusCode::CREATED)
+            tracing::debug!("created person : {:?}", &pers);
+            Ok(warp::reply::json(&pers))
         }
-        Err(_) => {
-            tracing::info!("error creating person");
-            Ok(StatusCode::BAD_REQUEST)
+        Err(err) => {
+            let error = ErrorMessage { code: 405, message: "erreur création personne".to_string() };
+            Ok(warp::reply::json(&error))
         }
     }
 }
@@ -149,4 +183,56 @@ pub async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> 
     });
 
     Ok(warp::reply::with_status(json, code))
+}
+
+async fn customize_error(err: Rejection) -> Result<impl Reply, Infallible> {
+    let code;
+    let message;
+
+    if let Some(server_error) = err.find::<ServerError>() {
+        code = StatusCode::INTERNAL_SERVER_ERROR;
+        message = server_error.msg.to_owned();
+    } else {
+        code = StatusCode::INTERNAL_SERVER_ERROR;
+        message = "UNHANDLED_REJECTION".to_string();
+    }
+    Ok(warp::reply::with_status(message, code))
+}
+
+#[derive(Debug, Clone, Error, Serialize, PartialEq)]
+pub struct ServerError {
+    #[serde(skip)]
+    pub status: StatusCode,
+    pub msg: String,
+}
+
+impl Reject for ServerError {}
+
+impl Display for ServerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{} ({})", self.msg, self.status)
+    }
+}
+
+impl ServerError {
+    pub fn new(status: StatusCode, msg: &str) -> Self {
+        ServerError {
+            status,
+            msg: msg.to_owned(),
+        }
+    }
+}
+
+impl From<anyhow::Error> for ServerError {
+    fn from(err: anyhow::Error) -> Self {
+        let e = match err.downcast::<ServerError>() {
+            Ok(e) => return e,
+            Err(e) => e,
+        };
+
+        ServerError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &format!("Unhandled error type: {:#?}", e),
+        )
+    }
 }
