@@ -1,25 +1,18 @@
 //src/main.rs
 
-use std::convert::Infallible;
-use std::env;
-
-use sqlx::PgPool;
-use warp::Filter;
-
-use tracing_subscriber::fmt::format::FmtSpan;
 use tracing::Level;
-
-use crate::db::update_person;
-use crate::models::{InsertablePerson, Person};
 
 mod db;
 mod errors;
 mod handlers;
 mod models;
 mod filters;
+//mod routes;
+mod template_setup;
 
 #[tokio::main]
 async fn main() {
+
     // a builder for `FmtSubscriber`.
     let subscriber = tracing_subscriber::fmt()
         // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
@@ -30,15 +23,17 @@ async fn main() {
     // and sets the constructed `Subscriber` as the default.
     tracing::subscriber::set_global_default(subscriber).expect("no global subscriber has been set");
 
-    let db_url = "postgres://postgres:password@localhost/persons";
+    let db_url = "postgres://postgres:1922leon@localhost/persons";
     let pool = db::create_pg_pool(db_url).await.unwrap();
+    let api = filters::person_filters(pool).await;
 
-    let api = filters::person_filters(pool);
     warp::serve(api).run(([127, 0, 0, 1], 8085)).await
 }
 
 #[tokio::test]
 async fn modify_person() {
+    use crate::models::InsertablePerson;
+
     let subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::TRACE)
         .finish();
@@ -67,6 +62,8 @@ async fn modify_person() {
 
 #[tokio::test]
 async fn post_person() {
+    use crate::models::InsertablePerson;
+
     let subscriber = tracing_subscriber::fmt()
         .with_max_level(Level::TRACE)
         .finish();
@@ -77,8 +74,8 @@ async fn post_person() {
     let api = filters::person_filters(pool);
 
     let ins_pers = InsertablePerson {
-        first_name: "Enrico".to_string(),
-        last_name: "MACIAS".to_string(),
+        first_name: "Joseph".to_string(),
+        last_name: "DENEUX".to_string(),
     };
 
     let req = warp::test::request()
